@@ -122,6 +122,8 @@ def get_today_ban_data():
         params = {"select": "*", "created_at": f"gte.{today_utc_start}"}
         resp = httpx.get(url, headers=headers, params=params)
         records = resp.json()
+        logger.info(f"Supabase 응답: {len(records)}건 / 상태: {resp.status_code}")
+        logger.info(f"Supabase 첫번째 레코드: {records[0] if records else 'none'}")
         result = {}
         for code, _ in COUNTRIES:
             items = [r for r in records if r.get("country") == code]
