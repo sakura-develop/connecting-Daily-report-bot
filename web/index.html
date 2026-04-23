@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>영구정지 유저 관리</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap');
 
@@ -214,10 +214,7 @@ textarea { resize: vertical; min-height: 80px; line-height: 1.6; }
 .empty-icon { font-size: 40px; margin-bottom: 12px; }
 .empty-text { font-size: 14px; }
 
-.loading {
-  text-align: center; padding: 48px 24px; color: var(--text-muted);
-  font-size: 14px;
-}
+.loading { text-align: center; padding: 48px 24px; color: var(--text-muted); font-size: 14px; }
 
 .toast {
   position: fixed; bottom: 28px; right: 28px;
@@ -231,6 +228,20 @@ textarea { resize: vertical; min-height: 80px; line-height: 1.6; }
 .toast.show { transform: translateY(0); opacity: 1; }
 .toast.success { border-color: var(--success); }
 .toast.error { border-color: var(--accent); }
+
+.modal-overlay {
+  display: none; position: fixed; top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.7);
+  z-index: 200; align-items: center; justify-content: center;
+}
+.modal-overlay.show { display: flex; }
+.modal-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; padding: 36px;
+  width: 100%; max-width: 400px; margin: 24px;
+}
+.modal-title { font-size: 18px; font-weight: 700; margin-bottom: 24px; }
 
 @media (max-width: 600px) {
   .stats-row { grid-template-columns: repeat(2, 1fr); }
@@ -277,6 +288,7 @@ textarea { resize: vertical; min-height: 80px; line-height: 1.6; }
         <div class="user-avatar" id="userAvatar">-</div>
         <span id="userName">-</span>
       </div>
+      <button class="btn btn-ghost btn-sm" onclick="showChangePw()">비밀번호 변경</button>
       <button class="btn btn-ghost btn-sm" onclick="doLogout()">로그아웃</button>
     </div>
   </div>
@@ -373,11 +385,30 @@ textarea { resize: vertical; min-height: 80px; line-height: 1.6; }
   </div>
 </div>
 
+<!-- 비밀번호 변경 모달 -->
+<div class="modal-overlay" id="changePwModal">
+  <div class="modal-card">
+    <div class="modal-title">🔑 비밀번호 변경</div>
+    <div class="field">
+      <label>새 비밀번호</label>
+      <input type="password" id="newPw" placeholder="새 비밀번호 입력 (6자 이상)" />
+    </div>
+    <div class="field">
+      <label>새 비밀번호 확인</label>
+      <input type="password" id="newPwConfirm" placeholder="비밀번호 재입력"
+        onkeydown="if(event.key==='Enter') doChangePw()" />
+    </div>
+    <div class="error-msg" id="changePwError"></div>
+    <div style="display:flex;gap:10px;margin-top:20px;">
+      <button class="btn btn-secondary" style="flex:1" onclick="hideChangePw()">취소</button>
+      <button class="btn btn-primary" style="flex:1" id="changePwBtn" onclick="doChangePw()">변경하기</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
-// ===== Supabase 설정 =====
-// 아래 두 값을 본인의 Supabase 값으로 교체해주세요
 const SUPABASE_URL = 'https://fkmapgmszwvtqtxuthyt.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_PbkIweX-O1guwwytRBgxkw_pEkDDQOz';
 
@@ -395,61 +426,36 @@ let currentUser = null;
 let selectedCountry = null;
 let selectedReason = null;
 
-// ===== 초기화 =====
 async function init() {
   const { data: { session } } = await sb.auth.getSession();
-  if (session) {
-    currentUser = session.user;
-    showApp();
-  }
-
-  // 로그인 상태 변화 감지
+  if (session) { currentUser = session.user; showApp(); }
   sb.auth.onAuthStateChange((event, session) => {
-    if (session) {
-      currentUser = session.user;
-      showApp();
-    } else {
-      currentUser = null;
-      showLogin();
-    }
+    if (session) { currentUser = session.user; showApp(); }
+    else { currentUser = null; showLogin(); }
   });
 }
 
-// ===== 로그인 =====
 async function doLogin() {
   const email = document.getElementById('loginEmail').value.trim();
   const pw = document.getElementById('loginPw').value;
   const err = document.getElementById('loginError');
   const btn = document.getElementById('loginBtn');
-
-  if (!email || !pw) {
-    err.textContent = '이메일과 비밀번호를 입력해주세요.';
-    err.style.display = 'block';
-    return;
-  }
-
-  btn.textContent = '로그인 중...';
-  btn.disabled = true;
-
+  if (!email || !pw) { err.textContent = '이메일과 비밀번호를 입력해주세요.'; err.style.display = 'block'; return; }
+  btn.textContent = '로그인 중...'; btn.disabled = true;
   const { error } = await sb.auth.signInWithPassword({ email, password: pw });
-
   if (error) {
     err.textContent = '이메일 또는 비밀번호가 올바르지 않습니다.';
     err.style.display = 'block';
-    btn.textContent = '로그인';
-    btn.disabled = false;
+    btn.textContent = '로그인'; btn.disabled = false;
   }
 }
 
-async function doLogout() {
-  await sb.auth.signOut();
-}
+async function doLogout() { await sb.auth.signOut(); }
 
 function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').classList.add('active');
-  const email = currentUser.email;
-  const name = email.split('@')[0];
+  const name = currentUser.email.split('@')[0];
   document.getElementById('userName').textContent = name;
   document.getElementById('userAvatar').textContent = name[0].toUpperCase();
 }
@@ -464,7 +470,6 @@ function showLogin() {
   document.getElementById('loginBtn').disabled = false;
 }
 
-// ===== 탭 =====
 function switchTab(tab, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -473,7 +478,6 @@ function switchTab(tab, el) {
   if (tab === 'list') loadList();
 }
 
-// ===== 국가 선택 =====
 function selectCountry(code, el) {
   document.querySelectorAll('.country-btn').forEach(b => b.classList.remove('active'));
   el.classList.add('active');
@@ -483,22 +487,15 @@ function selectCountry(code, el) {
   resetForm(false);
 }
 
-// ===== 정지사유 선택 =====
 function selectReason(reason, el) {
   document.querySelectorAll('.reason-btn').forEach(b => b.classList.remove('active'));
   el.classList.add('active');
   selectedReason = reason;
   const wrap = document.getElementById('otherInputWrap');
-  if (reason === '기타') {
-    wrap.classList.add('show');
-    document.getElementById('otherReason').focus();
-  } else {
-    wrap.classList.remove('show');
-    document.getElementById('otherReason').value = '';
-  }
+  if (reason === '기타') { wrap.classList.add('show'); document.getElementById('otherReason').focus(); }
+  else { wrap.classList.remove('show'); document.getElementById('otherReason').value = ''; }
 }
 
-// ===== 폼 초기화 =====
 function resetForm(resetCountry = false) {
   document.getElementById('userEmail').value = '';
   document.getElementById('otherReason').value = '';
@@ -512,11 +509,9 @@ function resetForm(resetCountry = false) {
   }
 }
 
-// ===== 유저 추가 =====
 async function addUser() {
   const email = document.getElementById('userEmail').value.trim();
   const otherReason = document.getElementById('otherReason').value.trim();
-
   if (!selectedCountry) return showToast('국가를 선택해주세요.', 'error');
   if (!email) return showToast('이메일을 입력해주세요.', 'error');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showToast('올바른 이메일 형식이 아닙니다.', 'error');
@@ -525,20 +520,17 @@ async function addUser() {
 
   const finalReason = selectedReason === '기타' ? `기타: ${otherReason}` : selectedReason;
   const btn = document.getElementById('addBtn');
-  btn.textContent = '저장 중...';
-  btn.disabled = true;
+  btn.textContent = '저장 중...'; btn.disabled = true;
 
   const { error } = await sb.from('ban_records').insert({
     country: selectedCountry,
-    email: email,
+    email,
     reason: finalReason,
     added_by_email: currentUser.email,
     added_by_name: currentUser.email.split('@')[0]
   });
 
-  btn.textContent = '추가하기';
-  btn.disabled = false;
-
+  btn.textContent = '추가하기'; btn.disabled = false;
   if (error) {
     if (error.code === '23505') return showToast('이미 입력된 이메일입니다.', 'error');
     return showToast('저장에 실패했습니다.', 'error');
@@ -553,7 +545,6 @@ async function addUser() {
   document.getElementById('userEmail').focus();
 }
 
-// ===== 유저 삭제 =====
 async function deleteUser(id) {
   const { error } = await sb.from('ban_records').delete().eq('id', id);
   if (error) return showToast('삭제에 실패했습니다.', 'error');
@@ -561,10 +552,8 @@ async function deleteUser(id) {
   loadList();
 }
 
-// ===== 목록 불러오기 =====
 async function loadList() {
   document.getElementById('userList').innerHTML = '<div class="loading">불러오는 중...</div>';
-
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -579,33 +568,23 @@ async function loadList() {
     return;
   }
 
-  // 통계 업데이트
   ['kr', 'jp', 'global', 'tw'].forEach(code => {
     document.getElementById('count-' + code).textContent = data.filter(u => u.country === code).length;
   });
   document.getElementById('totalCount').textContent = `총 ${data.length}명`;
 
   if (data.length === 0) {
-    document.getElementById('userList').innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon">📭</div>
-        <div class="empty-text">오늘 입력된 영구정지 유저가 없습니다.</div>
-      </div>`;
+    document.getElementById('userList').innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">오늘 입력된 영구정지 유저가 없습니다.</div></div>`;
     return;
   }
 
-  // 국가별 그룹핑
   const groups = {};
-  data.forEach(u => {
-    if (!groups[u.country]) groups[u.country] = [];
-    groups[u.country].push(u);
-  });
+  data.forEach(u => { if (!groups[u.country]) groups[u.country] = []; groups[u.country].push(u); });
 
   let html = '';
   ['kr', 'jp', 'global', 'tw'].forEach(code => {
     if (!groups[code]) return;
-    html += `<div style="margin-bottom:20px;">
-      <div class="section-label" style="margin-bottom:10px;">${COUNTRY_MAP[code]} (${groups[code].length}명)</div>`;
+    html += `<div style="margin-bottom:20px;"><div class="section-label" style="margin-bottom:10px;">${COUNTRY_MAP[code]} (${groups[code].length}명)</div>`;
     groups[code].forEach(u => {
       const isOwn = u.added_by_email === currentUser.email;
       const time = new Date(u.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
@@ -622,7 +601,46 @@ async function loadList() {
   document.getElementById('userList').innerHTML = html;
 }
 
-// ===== 토스트 =====
+function showChangePw() {
+  document.getElementById('changePwModal').classList.add('show');
+  document.getElementById('newPw').value = '';
+  document.getElementById('newPwConfirm').value = '';
+  document.getElementById('changePwError').style.display = 'none';
+  setTimeout(() => document.getElementById('newPw').focus(), 100);
+}
+
+function hideChangePw() {
+  document.getElementById('changePwModal').classList.remove('show');
+}
+
+async function doChangePw() {
+  const newPw = document.getElementById('newPw').value;
+  const confirm = document.getElementById('newPwConfirm').value;
+  const err = document.getElementById('changePwError');
+  const btn = document.getElementById('changePwBtn');
+
+  if (newPw.length < 6) {
+    err.textContent = '비밀번호는 6자 이상이어야 합니다.';
+    err.style.display = 'block'; return;
+  }
+  if (newPw !== confirm) {
+    err.textContent = '비밀번호가 일치하지 않습니다.';
+    err.style.display = 'block'; return;
+  }
+
+  btn.textContent = '변경 중...'; btn.disabled = true;
+  const { error } = await sb.auth.updateUser({ password: newPw });
+  btn.textContent = '변경하기'; btn.disabled = false;
+
+  if (error) {
+    err.textContent = '변경에 실패했습니다. 다시 시도해주세요.';
+    err.style.display = 'block'; return;
+  }
+
+  hideChangePw();
+  showToast('✅ 비밀번호가 변경되었습니다!', 'success');
+}
+
 function showToast(msg, type = 'success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -630,7 +648,6 @@ function showToast(msg, type = 'success') {
   setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-// ===== 시작 =====
 init();
 </script>
 </body>
