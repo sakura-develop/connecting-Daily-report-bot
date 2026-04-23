@@ -1,5 +1,4 @@
 import os
-import json
 import logging
 from datetime import datetime
 from slack_bolt import App
@@ -11,7 +10,6 @@ import pytz
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Slack App 초기화
 app = App(
     token=os.environ.get("SLACK_BOT_TOKEN"),
     signing_secret=os.environ.get("SLACK_SIGNING_SECRET")
@@ -20,21 +18,9 @@ app = App(
 flask_app = Flask(__name__)
 handler = SlackRequestHandler(app)
 
-# ========================
-# 설문 설정 (여기서 커스터마이즈)
-# ========================
 SURVEY_CONFIG = {
-    "question": "오늘 업무 내용을 공유해주세요 😊",
-    "options": [
-        "기획/전략 업무",
-        "개발/기술 업무",
-        "디자인 업무",
-        "미팅/커뮤니케이션",
-        "기타"
-    ],
-    "other_option": "기타",
     "target_members": [
-        "U039KB8CF3J",  # 따옴표와 쉼표 추가!
+        "U039KB8CF3J",
     ],
     "result_channel": os.environ.get("RESULT_CHANNEL_ID", "C0B04E3HY0Y"),
     "send_hour": 11,
@@ -42,200 +28,301 @@ SURVEY_CONFIG = {
     "timezone": "Asia/Seoul"
 }
 
-# 진행 중인 설문 응답 임시 저장 (기타 입력 대기 상태)
-pending_other_input = {}
+user_sessions = {}
 
 
-def build_survey_blocks():
-    """설문 메시지 블록 생성"""
-    options = []
-    for opt in SURVEY_CONFIG["options"]:
-        options.append({
-            "text": {"type": "plain_text", "text": opt},
-            "value": opt
-        })
-
+def build_intro_block():
     return [
         {
             "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"*{SURVEY_CONFIG['question']}*"
-            }
+            "text": {"type": "mrkdwn", "text": "오늘 업무 내용을 공유해주세요😆"}
+        },
+        {"type": "divider"},
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "*1. 오늘 발생한 버그/특이 사항이 있나요?🤔*"}
         },
         {
             "type": "actions",
-            "block_id": "survey_options",
+            "block_id": "q1_block",
             "elements": [
                 {
-                    "type": "static_select",
-                    "placeholder": {"type": "plain_text", "text": "선택해주세요"},
-                    "options": options,
-                    "action_id": "survey_select"
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "있음"},
+                    "value": "있음",
+                    "action_id": "q1_있음",
+                    "style": "primary"
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "없음"},
+                    "value": "없음",
+                    "action_id": "q1_없음"
                 }
             ]
         }
     ]
 
 
+def build_q2_block():
+    return [
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "*2. 오늘 영구정지 유저가 있었나요?👿*"}
+        },
+        {
+            "type": "actions",
+            "block_id": "q2_block",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "있음"},
+                    "value": "있음",
+                    "action_id": "q2_있음",
+                    "style": "danger"
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "없음"},
+                    "value": "없음",
+                    "action_id": "q2_없음"
+                }
+            ]
+        }
+    ]
+
+
+def build_outro_block():
+    return [
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "오늘도 고생 많으셨습니다! 🎉"}
+        }
+    ]
+
+
+def build_q1_1_modal():
+    return {
+        "type": "modal",
+        "callback_id": "q1_1_modal",
+        "title": {"type": "plain_text", "text": "버그/특이사항"},
+        "submit": {"type": "plain_text", "text": "제출"},
+        "close": {"type": "plain_text", "text": "취소"},
+        "blocks": [
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "✏️ *상세 내용을 공유해주세요.*"}
+            },
+            {
+                "type": "input",
+                "block_id": "q1_1_input_block",
+                "element": {
+                    "type": "plain_text_input",
+                    "action_id": "q1_1_input",
+                    "placeholder": {"type": "plain_text", "text": "버그 또는 특이사항 내용을 입력해주세요"},
+                    "multiline": True
+                },
+                "label": {"type": "plain_text", "text": "상세 내용"}
+            }
+        ]
+    }
+
+
+def build_q2_1_modal():
+    return {
+        "type": "modal",
+        "callback_id": "q2_1_modal",
+        "title": {"type": "plain_text", "text": "영구정지 유저"},
+        "submit": {"type": "plain_text", "text": "제출"},
+        "close": {"type": "plain_text", "text": "취소"},
+        "blocks": [
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "🚨 *영구정지 유저 정보를 공유해주세요.*"}
+            },
+            {
+                "type": "input",
+                "block_id": "q2_1_input_block",
+                "element": {
+                    "type": "plain_text_input",
+                    "action_id": "q2_1_input",
+                    "placeholder": {"type": "plain_text", "text": "유저 정보를 입력해주세요"},
+                    "multiline": True
+                },
+                "label": {"type": "plain_text", "text": "유저 정보"}
+            }
+        ]
+    }
+
+
 def send_survey_to_members():
-    """지정된 멤버들에게 DM으로 설문 발송"""
     logger.info(f"[{datetime.now()}] 설문 발송 시작")
-
-    if not SURVEY_CONFIG["target_members"]:
-        logger.warning("target_members가 설정되지 않았습니다. app.py의 SURVEY_CONFIG를 확인해주세요.")
-        return
-
     for user_id in SURVEY_CONFIG["target_members"]:
         try:
+            user_sessions[user_id] = {}
             app.client.chat_postMessage(
                 channel=user_id,
-                text=SURVEY_CONFIG["question"],
-                blocks=build_survey_blocks()
+                text="오늘 업무 내용을 공유해주세요😆",
+                blocks=build_intro_block()
             )
             logger.info(f"설문 발송 완료: {user_id}")
         except Exception as e:
             logger.error(f"설문 발송 실패 ({user_id}): {e}")
 
 
-def post_result_to_channel(user_id, answer, is_other=False, other_text=""):
-    """답변을 결과 채널에 공개"""
-    if not SURVEY_CONFIG["result_channel"]:
-        logger.warning("result_channel이 설정되지 않았습니다.")
-        return
-
+def post_final_result(user_id):
+    session = user_sessions.get(user_id, {})
     try:
-        # 유저 정보 가져오기
         user_info = app.client.users_info(user=user_id)
         user_name = user_info["user"]["real_name"] or user_info["user"]["name"]
 
-        if is_other and other_text:
-            message = f"*{user_name}*님의 답변:\n> {answer} → {other_text}"
-        else:
-            message = f"*{user_name}*님의 답변:\n> {answer}"
+        lines = [f"📋 *{user_name}*님의 업무 보고"]
+        lines.append(f"• 버그/특이사항: *{session.get('q1', '-')}*")
+        if session.get("q1_1"):
+            lines.append(f"  └ 상세내용: {session['q1_1']}")
+        lines.append(f"• 영구정지 유저: *{session.get('q2', '-')}*")
+        if session.get("q2_1"):
+            lines.append(f"  └ 유저정보: {session['q2_1']}")
 
+        message = "\n".join(lines)
         app.client.chat_postMessage(
             channel=SURVEY_CONFIG["result_channel"],
             text=message,
-            blocks=[
-                {
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": message}
-                }
-            ]
+            blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": message}}]
         )
-        logger.info(f"결과 채널 게시 완료: {user_name} → {answer}")
+        logger.info(f"결과 채널 게시 완료: {user_name}")
     except Exception as e:
         logger.error(f"결과 채널 게시 실패: {e}")
 
 
-# ========================
-# 객관식 선택 처리
-# ========================
-@app.action("survey_select")
-def handle_survey_select(ack, body, client):
+@app.action("q1_있음")
+def handle_q1_yes(ack, body, client):
     ack()
-
     user_id = body["user"]["id"]
-    selected_value = body["actions"][0]["selected_option"]["value"]
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {}
+    user_sessions[user_id]["q1"] = "있음"
+    user_sessions[user_id]["q1_channel"] = body["channel"]["id"]
+    user_sessions[user_id]["q1_ts"] = body["message"]["ts"]
+    try:
+        client.views_open(trigger_id=body["trigger_id"], view=build_q1_1_modal())
+    except Exception as e:
+        logger.error(f"q1_1 모달 열기 실패: {e}")
+
+
+@app.action("q1_없음")
+def handle_q1_no(ack, body, client):
+    ack()
+    user_id = body["user"]["id"]
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {}
+    user_sessions[user_id]["q1"] = "없음"
     channel_id = body["channel"]["id"]
     message_ts = body["message"]["ts"]
+    try:
+        client.chat_update(
+            channel=channel_id,
+            ts=message_ts,
+            text="질문 1 완료",
+            blocks=[
+                {"type": "section", "text": {"type": "mrkdwn", "text": "오늘 업무 내용을 공유해주세요😆"}},
+                {"type": "divider"},
+                {"type": "section", "text": {"type": "mrkdwn", "text": "*1. 오늘 발생한 버그/특이 사항이 있나요?🤔*\n✅ 없음"}},
+            ]
+        )
+        client.chat_postMessage(channel=channel_id, text="질문 2", blocks=build_q2_block())
+    except Exception as e:
+        logger.error(f"q1 없음 처리 실패: {e}")
 
-    # "기타" 선택 시 주관식 입력창(모달) 열기
-    if selected_value == SURVEY_CONFIG["other_option"]:
-        pending_other_input[user_id] = {
-            "channel_id": channel_id,
-            "message_ts": message_ts
-        }
-        try:
-            client.views_open(
-                trigger_id=body["trigger_id"],
-                view={
-                    "type": "modal",
-                    "callback_id": "other_input_modal",
-                    "title": {"type": "plain_text", "text": "직접 입력"},
-                    "submit": {"type": "plain_text", "text": "제출"},
-                    "close": {"type": "plain_text", "text": "취소"},
-                    "blocks": [
-                        {
-                            "type": "input",
-                            "block_id": "other_text_block",
-                            "element": {
-                                "type": "plain_text_input",
-                                "action_id": "other_text_input",
-                                "placeholder": {"type": "plain_text", "text": "업무 내용을 입력해주세요"},
-                                "multiline": True
-                            },
-                            "label": {"type": "plain_text", "text": "기타 내용"}
-                        }
-                    ]
-                }
-            )
-        except Exception as e:
-            logger.error(f"모달 열기 실패: {e}")
-    else:
-        # 일반 선택지 → 즉시 처리
-        try:
-            # 원래 메시지를 완료 상태로 업데이트
+
+@app.view("q1_1_modal")
+def handle_q1_1_submit(ack, body, client):
+    ack()
+    user_id = body["user"]["id"]
+    text = body["view"]["state"]["values"]["q1_1_input_block"]["q1_1_input"]["value"]
+    user_sessions[user_id]["q1_1"] = text
+    channel_id = user_sessions[user_id].get("q1_channel")
+    message_ts = user_sessions[user_id].get("q1_ts")
+    try:
+        if channel_id and message_ts:
             client.chat_update(
                 channel=channel_id,
                 ts=message_ts,
-                text=f"✅ 답변 완료: *{selected_value}*",
+                text="질문 1 완료",
                 blocks=[
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": f"✅ 답변이 제출되었습니다!\n선택: *{selected_value}*"
-                        }
-                    }
+                    {"type": "section", "text": {"type": "mrkdwn", "text": "오늘 업무 내용을 공유해주세요😆"}},
+                    {"type": "divider"},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f"*1. 오늘 발생한 버그/특이 사항이 있나요?🤔*\n✅ 있음\n└ {text}"}},
                 ]
             )
-        except Exception as e:
-            logger.error(f"메시지 업데이트 실패: {e}")
-
-        # 결과 채널에 공개
-        post_result_to_channel(user_id, selected_value)
+        client.chat_postMessage(channel=channel_id, text="질문 2", blocks=build_q2_block())
+    except Exception as e:
+        logger.error(f"q1_1 제출 처리 실패: {e}")
 
 
-# ========================
-# 기타 주관식 모달 제출 처리
-# ========================
-@app.view("other_input_modal")
-def handle_other_input(ack, body, client):
+@app.action("q2_있음")
+def handle_q2_yes(ack, body, client):
     ack()
-
     user_id = body["user"]["id"]
-    other_text = body["view"]["state"]["values"]["other_text_block"]["other_text_input"]["value"]
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {}
+    user_sessions[user_id]["q2"] = "있음"
+    user_sessions[user_id]["q2_channel"] = body["channel"]["id"]
+    user_sessions[user_id]["q2_ts"] = body["message"]["ts"]
+    try:
+        client.views_open(trigger_id=body["trigger_id"], view=build_q2_1_modal())
+    except Exception as e:
+        logger.error(f"q2_1 모달 열기 실패: {e}")
 
-    # DM 메시지 업데이트
-    if user_id in pending_other_input:
-        info = pending_other_input.pop(user_id)
-        try:
+
+@app.action("q2_없음")
+def handle_q2_no(ack, body, client):
+    ack()
+    user_id = body["user"]["id"]
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {}
+    user_sessions[user_id]["q2"] = "없음"
+    channel_id = body["channel"]["id"]
+    message_ts = body["message"]["ts"]
+    try:
+        client.chat_update(
+            channel=channel_id,
+            ts=message_ts,
+            text="질문 2 완료",
+            blocks=[
+                {"type": "section", "text": {"type": "mrkdwn", "text": "*2. 오늘 영구정지 유저가 있었나요?👿*\n✅ 없음"}},
+            ]
+        )
+        client.chat_postMessage(channel=channel_id, text="오늘도 고생 많으셨습니다! 🎉", blocks=build_outro_block())
+    except Exception as e:
+        logger.error(f"q2 없음 처리 실패: {e}")
+    post_final_result(user_id)
+
+
+@app.view("q2_1_modal")
+def handle_q2_1_submit(ack, body, client):
+    ack()
+    user_id = body["user"]["id"]
+    text = body["view"]["state"]["values"]["q2_1_input_block"]["q2_1_input"]["value"]
+    user_sessions[user_id]["q2_1"] = text
+    channel_id = user_sessions[user_id].get("q2_channel")
+    message_ts = user_sessions[user_id].get("q2_ts")
+    try:
+        if channel_id and message_ts:
             client.chat_update(
-                channel=info["channel_id"],
-                ts=info["message_ts"],
-                text=f"✅ 답변 완료: 기타 → {other_text}",
+                channel=channel_id,
+                ts=message_ts,
+                text="질문 2 완료",
                 blocks=[
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": f"✅ 답변이 제출되었습니다!\n선택: *기타*\n내용: {other_text}"
-                        }
-                    }
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f"*2. 오늘 영구정지 유저가 있었나요?👿*\n✅ 있음\n└ {text}"}},
                 ]
             )
-        except Exception as e:
-            logger.error(f"메시지 업데이트 실패: {e}")
+        client.chat_postMessage(channel=channel_id, text="오늘도 고생 많으셨습니다! 🎉", blocks=build_outro_block())
+    except Exception as e:
+        logger.error(f"q2_1 제출 처리 실패: {e}")
+    post_final_result(user_id)
 
-    # 결과 채널에 공개
-    post_result_to_channel(user_id, SURVEY_CONFIG["other_option"], is_other=True, other_text=other_text)
 
-
-# ========================
-# 수동 트리거 슬래시 커맨드 (/send-survey)
-# ========================
 @app.command("/send-survey")
 def handle_send_survey(ack, respond):
     ack()
@@ -243,9 +330,6 @@ def handle_send_survey(ack, respond):
     respond("✅ 설문이 발송되었습니다!")
 
 
-# ========================
-# Flask 라우트
-# ========================
 @flask_app.route("/slack/events", methods=["POST"])
 def slack_events():
     return handler.handle(request)
@@ -266,9 +350,6 @@ def health():
     return {"status": "ok", "time": str(datetime.now())}
 
 
-# ========================
-# 스케줄러 (매일 자동 발송)
-# ========================
 def start_scheduler():
     tz = pytz.timezone(SURVEY_CONFIG["timezone"])
     scheduler = BackgroundScheduler(timezone=tz)
