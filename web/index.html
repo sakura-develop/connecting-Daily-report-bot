@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>영구정지 유저 관리</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface2: #222638;
+  --border: #2e3247;
+  --accent: #ff4757;
+  --accent-hover: #ff2d3f;
+  --text: #e8eaf0;
+  --text-muted: #6b7280;
+  --success: #2ecc71;
+  --radius: 12px;
+  --radius-sm: 8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Pretendard', -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+.login-wrap {
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(ellipse at 25% 25%, rgba(255,71,87,0.10) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 80%, rgba(255,107,129,0.06) 0%, transparent 50%),
+    var(--bg);
+}
+
+.login-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 48px;
+  width: 100%; max-width: 420px;
+  box-shadow: 0 32px 80px rgba(0,0,0,0.5);
+}
+
+.login-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 36px; }
+.login-logo-icon {
+  width: 42px; height: 42px;
+  background: var(--accent); border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+}
+.login-logo-text { font-size: 18px; font-weight: 700; }
+.login-title { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
+.login-sub { font-size: 14px; color: var(--text-muted); margin-bottom: 32px; }
+
+.field { margin-bottom: 16px; }
+.field label { display: block; font-size: 13px; font-weight: 500; color: var(--text-muted); margin-bottom: 6px; }
+
+input[type="email"], input[type="password"], textarea {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  color: var(--text);
+  font-family: inherit; font-size: 14px;
+  outline: none; transition: border-color 0.2s;
+}
+input:focus, textarea:focus { border-color: var(--accent); }
+textarea { resize: vertical; min-height: 80px; line-height: 1.6; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 12px 20px;
+  border: none; border-radius: var(--radius-sm);
+  font-family: inherit; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:disabled { background: var(--border); cursor: not-allowed; }
+.btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+.btn-danger { background: rgba(255,71,87,0.12); color: var(--accent); border: 1px solid rgba(255,71,87,0.25); }
+.btn-danger:hover { background: rgba(255,71,87,0.2); }
+.btn-ghost { background: none; color: var(--text-muted); }
+.btn-ghost:hover { color: var(--text); }
+.btn-sm { padding: 7px 12px; font-size: 13px; }
+.btn-full { width: 100%; }
+
+.error-msg { color: var(--accent); font-size: 13px; margin-top: 12px; display: none; }
+.section-label {
+  font-size: 12px; font-weight: 600;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+
+.app { display: none; }
+.app.active { display: block; }
+
+.header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 32px; height: 60px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100;
+}
+.header-left { display: flex; align-items: center; gap: 12px; }
+.header-logo {
+  width: 32px; height: 32px; background: var(--accent);
+  border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px;
+}
+.header-title { font-size: 16px; font-weight: 600; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.user-badge {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 100px; padding: 6px 14px;
+  font-size: 13px; font-weight: 500;
+}
+.user-avatar {
+  width: 22px; height: 22px; background: var(--accent);
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700;
+}
+
+.main { max-width: 860px; margin: 0 auto; padding: 40px 24px; }
+
+.tabs {
+  display: flex; gap: 4px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 4px; margin-bottom: 32px;
+}
+.tab {
+  flex: 1; padding: 10px; border: none; background: none;
+  color: var(--text-muted); font-family: inherit; font-size: 14px; font-weight: 500;
+  border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s; text-align: center;
+}
+.tab.active { background: var(--accent); color: #fff; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 28px; margin-bottom: 20px;
+}
+.card-title { font-size: 15px; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+
+.country-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.country-btn {
+  padding: 14px; border: 2px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--surface2);
+  color: var(--text-muted); font-family: inherit; font-size: 14px; font-weight: 500;
+  cursor: pointer; transition: all 0.2s; text-align: center;
+}
+.country-btn:hover { border-color: var(--accent); color: var(--text); }
+.country-btn.active { border-color: var(--accent); background: rgba(255,71,87,0.10); color: var(--text); }
+
+.reason-grid { display: flex; flex-direction: column; gap: 8px; }
+.reason-btn {
+  padding: 12px 16px; border: 2px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--surface2);
+  color: var(--text-muted); font-family: inherit; font-size: 14px; font-weight: 500;
+  cursor: pointer; transition: all 0.2s; text-align: left;
+  display: flex; align-items: center; gap: 10px;
+}
+.reason-btn:hover { border-color: var(--accent); color: var(--text); }
+.reason-btn.active { border-color: var(--accent); background: rgba(255,71,87,0.10); color: var(--text); }
+.reason-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  border: 2px solid var(--text-muted); flex-shrink: 0; transition: all 0.2s;
+}
+.reason-btn.active .reason-dot { background: var(--accent); border-color: var(--accent); }
+
+.other-input-wrap { display: none; margin-top: 12px; }
+.other-input-wrap.show { display: block; }
+
+.user-form { display: none; }
+.user-form.show { display: block; animation: fadeIn 0.2s ease; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 16px; text-align: center;
+}
+.stat-flag { font-size: 22px; margin-bottom: 4px; }
+.stat-count { font-size: 28px; font-weight: 700; color: var(--accent); }
+.stat-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+.user-item {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 16px 20px;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  margin-bottom: 8px; animation: fadeIn 0.2s ease;
+}
+.user-item-info { flex: 1; }
+.user-item-email { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+.user-item-meta { font-size: 13px; color: var(--text-muted); }
+
+.empty-state { text-align: center; padding: 48px 24px; color: var(--text-muted); }
+.empty-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-text { font-size: 14px; }
+
+.loading {
+  text-align: center; padding: 48px 24px; color: var(--text-muted);
+  font-size: 14px;
+}
+
+.toast {
+  position: fixed; bottom: 28px; right: 28px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 14px 20px;
+  font-size: 14px; font-weight: 500;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  transform: translateY(20px); opacity: 0;
+  transition: all 0.3s; z-index: 999;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.success { border-color: var(--success); }
+.toast.error { border-color: var(--accent); }
+
+@media (max-width: 600px) {
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+  .header { padding: 0 16px; }
+  .main { padding: 24px 16px; }
+  .login-card { padding: 32px 24px; }
+}
+</style>
+</head>
+<body>
+
+<!-- 로그인 -->
+<div class="login-wrap" id="loginWrap">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-icon">🚫</div>
+      <div class="login-logo-text">BanManager</div>
+    </div>
+    <div class="login-title">로그인</div>
+    <div class="login-sub">담당자 계정으로 로그인해주세요</div>
+    <div class="field">
+      <label>이메일</label>
+      <input type="email" id="loginEmail" placeholder="이메일 입력" />
+    </div>
+    <div class="field">
+      <label>비밀번호</label>
+      <input type="password" id="loginPw" placeholder="비밀번호 입력"
+        onkeydown="if(event.key==='Enter') doLogin()" />
+    </div>
+    <div class="error-msg" id="loginError"></div>
+    <button class="btn btn-primary btn-full" id="loginBtn" onclick="doLogin()" style="margin-top:20px">로그인</button>
+  </div>
+</div>
+
+<!-- 앱 -->
+<div class="app" id="app">
+  <div class="header">
+    <div class="header-left">
+      <div class="header-logo">🚫</div>
+      <div class="header-title">영구정지 유저 관리</div>
+    </div>
+    <div class="header-right">
+      <div class="user-badge">
+        <div class="user-avatar" id="userAvatar">-</div>
+        <span id="userName">-</span>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="doLogout()">로그아웃</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('input', this)">✏️ 유저 입력</button>
+      <button class="tab" onclick="switchTab('list', this)">📋 오늘 내역</button>
+    </div>
+
+    <!-- 입력 탭 -->
+    <div class="tab-content active" id="tab-input">
+      <div class="card">
+        <div class="card-title">🌏 국가 선택</div>
+        <div class="country-grid">
+          <button class="country-btn" onclick="selectCountry('kr', this)">🇰🇷 한국</button>
+          <button class="country-btn" onclick="selectCountry('jp', this)">🇯🇵 일본</button>
+          <button class="country-btn" onclick="selectCountry('global', this)">🌏 글로벌</button>
+          <button class="country-btn" onclick="selectCountry('tw', this)">🇹🇼 대만/홍콩</button>
+        </div>
+      </div>
+
+      <div class="card user-form" id="userForm">
+        <div class="card-title">
+          <span id="formCountryLabel">🇰🇷 한국</span> — 영구정지 유저 정보 입력
+        </div>
+        <div class="field">
+          <label>이메일 *</label>
+          <input type="email" id="userEmail" placeholder="user@example.com" />
+        </div>
+        <div class="field">
+          <div class="section-label">정지 사유 *</div>
+          <div class="reason-grid">
+            <button class="reason-btn" onclick="selectReason('3대 악성 행위', this)">
+              <div class="reason-dot"></div> 3대 악성 행위
+            </button>
+            <button class="reason-btn" onclick="selectReason('연락처 교환 요구', this)">
+              <div class="reason-dot"></div> 연락처 교환 요구
+            </button>
+            <button class="reason-btn" onclick="selectReason('스캠', this)">
+              <div class="reason-dot"></div> 스캠
+            </button>
+            <button class="reason-btn" onclick="selectReason('피드 규칙 위반', this)">
+              <div class="reason-dot"></div> 피드 규칙 위반
+            </button>
+            <button class="reason-btn" onclick="selectReason('기타', this)">
+              <div class="reason-dot"></div> 기타
+            </button>
+          </div>
+          <div class="other-input-wrap" id="otherInputWrap">
+            <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px;">기타 사유 직접 입력 *</label>
+            <textarea id="otherReason" placeholder="정지 사유를 직접 입력해주세요"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:8px;">
+          <button class="btn btn-secondary" onclick="resetForm()">초기화</button>
+          <button class="btn btn-primary" style="flex:1" id="addBtn" onclick="addUser()">추가하기</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 내역 탭 -->
+    <div class="tab-content" id="tab-list">
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-flag">🇰🇷</div>
+          <div class="stat-count" id="count-kr">0</div>
+          <div class="stat-label">한국</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-flag">🇯🇵</div>
+          <div class="stat-count" id="count-jp">0</div>
+          <div class="stat-label">일본</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-flag">🌏</div>
+          <div class="stat-count" id="count-global">0</div>
+          <div class="stat-label">글로벌</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-flag">🇹🇼</div>
+          <div class="stat-count" id="count-tw">0</div>
+          <div class="stat-label">대만/홍콩</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="justify-content:space-between;">
+          <span>📋 오늘 입력 내역</span>
+          <span id="totalCount" style="font-size:13px;color:var(--text-muted);font-weight:400;">총 0명</span>
+        </div>
+        <div id="userList"><div class="loading">불러오는 중...</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== Supabase 설정 =====
+// 아래 두 값을 본인의 Supabase 값으로 교체해주세요
+const SUPABASE_URL = 'https://fkmapgmszwvtqtxuthyt.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_PbkIweX-O1guwwytRBgxkw_pEkDDQOz';
+
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+const COUNTRY_MAP = {
+  kr: '🇰🇷 한국',
+  jp: '🇯🇵 일본',
+  global: '🌏 글로벌',
+  tw: '🇹🇼 대만/홍콩'
+};
+
+let currentUser = null;
+let selectedCountry = null;
+let selectedReason = null;
+
+// ===== 초기화 =====
+async function init() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) {
+    currentUser = session.user;
+    showApp();
+  }
+
+  // 로그인 상태 변화 감지
+  sb.auth.onAuthStateChange((event, session) => {
+    if (session) {
+      currentUser = session.user;
+      showApp();
+    } else {
+      currentUser = null;
+      showLogin();
+    }
+  });
+}
+
+// ===== 로그인 =====
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pw = document.getElementById('loginPw').value;
+  const err = document.getElementById('loginError');
+  const btn = document.getElementById('loginBtn');
+
+  if (!email || !pw) {
+    err.textContent = '이메일과 비밀번호를 입력해주세요.';
+    err.style.display = 'block';
+    return;
+  }
+
+  btn.textContent = '로그인 중...';
+  btn.disabled = true;
+
+  const { error } = await sb.auth.signInWithPassword({ email, password: pw });
+
+  if (error) {
+    err.textContent = '이메일 또는 비밀번호가 올바르지 않습니다.';
+    err.style.display = 'block';
+    btn.textContent = '로그인';
+    btn.disabled = false;
+  }
+}
+
+async function doLogout() {
+  await sb.auth.signOut();
+}
+
+function showApp() {
+  document.getElementById('loginWrap').style.display = 'none';
+  document.getElementById('app').classList.add('active');
+  const email = currentUser.email;
+  const name = email.split('@')[0];
+  document.getElementById('userName').textContent = name;
+  document.getElementById('userAvatar').textContent = name[0].toUpperCase();
+}
+
+function showLogin() {
+  document.getElementById('loginWrap').style.display = 'flex';
+  document.getElementById('app').classList.remove('active');
+  document.getElementById('loginEmail').value = '';
+  document.getElementById('loginPw').value = '';
+  document.getElementById('loginError').style.display = 'none';
+  document.getElementById('loginBtn').textContent = '로그인';
+  document.getElementById('loginBtn').disabled = false;
+}
+
+// ===== 탭 =====
+function switchTab(tab, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+  if (tab === 'list') loadList();
+}
+
+// ===== 국가 선택 =====
+function selectCountry(code, el) {
+  document.querySelectorAll('.country-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  selectedCountry = code;
+  document.getElementById('userForm').classList.add('show');
+  document.getElementById('formCountryLabel').textContent = COUNTRY_MAP[code];
+  resetForm(false);
+}
+
+// ===== 정지사유 선택 =====
+function selectReason(reason, el) {
+  document.querySelectorAll('.reason-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  selectedReason = reason;
+  const wrap = document.getElementById('otherInputWrap');
+  if (reason === '기타') {
+    wrap.classList.add('show');
+    document.getElementById('otherReason').focus();
+  } else {
+    wrap.classList.remove('show');
+    document.getElementById('otherReason').value = '';
+  }
+}
+
+// ===== 폼 초기화 =====
+function resetForm(resetCountry = false) {
+  document.getElementById('userEmail').value = '';
+  document.getElementById('otherReason').value = '';
+  document.getElementById('otherInputWrap').classList.remove('show');
+  document.querySelectorAll('.reason-btn').forEach(b => b.classList.remove('active'));
+  selectedReason = null;
+  if (resetCountry) {
+    document.querySelectorAll('.country-btn').forEach(b => b.classList.remove('active'));
+    selectedCountry = null;
+    document.getElementById('userForm').classList.remove('show');
+  }
+}
+
+// ===== 유저 추가 =====
+async function addUser() {
+  const email = document.getElementById('userEmail').value.trim();
+  const otherReason = document.getElementById('otherReason').value.trim();
+
+  if (!selectedCountry) return showToast('국가를 선택해주세요.', 'error');
+  if (!email) return showToast('이메일을 입력해주세요.', 'error');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showToast('올바른 이메일 형식이 아닙니다.', 'error');
+  if (!selectedReason) return showToast('정지 사유를 선택해주세요.', 'error');
+  if (selectedReason === '기타' && !otherReason) return showToast('기타 사유를 입력해주세요.', 'error');
+
+  const finalReason = selectedReason === '기타' ? `기타: ${otherReason}` : selectedReason;
+  const btn = document.getElementById('addBtn');
+  btn.textContent = '저장 중...';
+  btn.disabled = true;
+
+  const { error } = await sb.from('ban_records').insert({
+    country: selectedCountry,
+    email: email,
+    reason: finalReason,
+    added_by_email: currentUser.email,
+    added_by_name: currentUser.email.split('@')[0]
+  });
+
+  btn.textContent = '추가하기';
+  btn.disabled = false;
+
+  if (error) {
+    if (error.code === '23505') return showToast('이미 입력된 이메일입니다.', 'error');
+    return showToast('저장에 실패했습니다.', 'error');
+  }
+
+  showToast('✅ 추가되었습니다!', 'success');
+  document.getElementById('userEmail').value = '';
+  document.querySelectorAll('.reason-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('otherInputWrap').classList.remove('show');
+  document.getElementById('otherReason').value = '';
+  selectedReason = null;
+  document.getElementById('userEmail').focus();
+}
+
+// ===== 유저 삭제 =====
+async function deleteUser(id) {
+  const { error } = await sb.from('ban_records').delete().eq('id', id);
+  if (error) return showToast('삭제에 실패했습니다.', 'error');
+  showToast('삭제되었습니다.', 'success');
+  loadList();
+}
+
+// ===== 목록 불러오기 =====
+async function loadList() {
+  document.getElementById('userList').innerHTML = '<div class="loading">불러오는 중...</div>';
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const { data, error } = await sb
+    .from('ban_records')
+    .select('*')
+    .gte('created_at', today.toISOString())
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    document.getElementById('userList').innerHTML = '<div class="empty-state"><div class="empty-text">데이터를 불러오지 못했습니다.</div></div>';
+    return;
+  }
+
+  // 통계 업데이트
+  ['kr', 'jp', 'global', 'tw'].forEach(code => {
+    document.getElementById('count-' + code).textContent = data.filter(u => u.country === code).length;
+  });
+  document.getElementById('totalCount').textContent = `총 ${data.length}명`;
+
+  if (data.length === 0) {
+    document.getElementById('userList').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <div class="empty-text">오늘 입력된 영구정지 유저가 없습니다.</div>
+      </div>`;
+    return;
+  }
+
+  // 국가별 그룹핑
+  const groups = {};
+  data.forEach(u => {
+    if (!groups[u.country]) groups[u.country] = [];
+    groups[u.country].push(u);
+  });
+
+  let html = '';
+  ['kr', 'jp', 'global', 'tw'].forEach(code => {
+    if (!groups[code]) return;
+    html += `<div style="margin-bottom:20px;">
+      <div class="section-label" style="margin-bottom:10px;">${COUNTRY_MAP[code]} (${groups[code].length}명)</div>`;
+    groups[code].forEach(u => {
+      const isOwn = u.added_by_email === currentUser.email;
+      const time = new Date(u.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+      html += `<div class="user-item">
+        <div class="user-item-info">
+          <div class="user-item-email">${u.email}</div>
+          <div class="user-item-meta">⚠️ ${u.reason} &nbsp;·&nbsp; ${u.added_by_name} &nbsp;·&nbsp; ${time}</div>
+        </div>
+        ${isOwn ? `<button class="btn btn-danger btn-sm" onclick="deleteUser('${u.id}')">삭제</button>` : ''}
+      </div>`;
+    });
+    html += '</div>';
+  });
+  document.getElementById('userList').innerHTML = html;
+}
+
+// ===== 토스트 =====
+function showToast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ===== 시작 =====
+init();
+</script>
+</body>
+</html>
