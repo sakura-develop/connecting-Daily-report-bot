@@ -118,7 +118,7 @@ def get_today_ban_data():
         }
         # KST 오늘 00:00 → UTC 변환 (KST = UTC+9)
         today_kst_start = datetime.now(KST).replace(hour=0, minute=0, second=0, microsecond=0)
-        today_utc_start = today_kst_start.astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        today_utc_start = today_kst_start.astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         params = {"select": "*", "created_at": f"gte.{today_utc_start}"}
         resp = httpx.get(url, headers=headers, params=params)
         records = resp.json()
