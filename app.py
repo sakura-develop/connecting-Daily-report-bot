@@ -264,6 +264,42 @@ def send_standup(user_id, include_q1=True):
         logger.error(f"Standup 발송 실패 ({user_id}): {e}")
 
 
+def save_standup_submission(user_id, q1):
+    """Supabase에 Standup 제출 이력 저장"""
+    try:
+        today = datetime.now(KST).strftime("%Y-%m-%d")
+        url = f"{CONFIG['SUPABASE_URL']}/rest/v1/standup_submissions"
+        headers = {
+            "apikey": CONFIG["SUPABASE_SECRET_KEY"],
+            "Authorization": f"Bearer {CONFIG['SUPABASE_SECRET_KEY']}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates"
+        }
+        data = {"user_id": user_id, "submitted_date": today, "q1": q1}
+        resp = httpx.post(url, headers=headers, json=data)
+        logger.info(f"Standup 제출 이력 저장: {user_id} / {today}")
+    except Exception as e:
+        logger.error(f"Standup 제출 이력 저장 실패: {e}")
+
+
+def check_standup_submitted(user_id):
+    """Supabase에서 오늘 Standup 제출 여부 확인"""
+    try:
+        today = datetime.now(KST).strftime("%Y-%m-%d")
+        url = f"{CONFIG['SUPABASE_URL']}/rest/v1/standup_submissions"
+        headers = {
+            "apikey": CONFIG["SUPABASE_SECRET_KEY"],
+            "Authorization": f"Bearer {CONFIG['SUPABASE_SECRET_KEY']}",
+        }
+        params = {"user_id": f"eq.{user_id}", "submitted_date": f"eq.{today}"}
+        resp = httpx.get(url, headers=headers, params=params)
+        records = resp.json()
+        return len(records) > 0, records[0].get("q1", "") if records else ""
+    except Exception as e:
+        logger.error(f"Standup 제출 이력 확인 실패: {e}")
+        return False, ""
+
+
 def send_standup_all():
     """평일 오전 10시 전체 발송"""
     global daily_representative
@@ -277,14 +313,19 @@ def check_member_a_response():
     """17시 기준 MEMBER_A 미응답 시 MEMBER_B로 전환"""
     global daily_representative
     member_a = CONFIG["MEMBER_A"]
-    session = standup_sessions.get(member_a, {})
-    if not session.get("submitted"):
+    # Supabase에서 오늘 제출 여부 확인
+    submitted, q1 = check_standup_submitted(member_a)
+    # 메모리 세션도 함께 확인
+    session_submitted = standup_sessions.get(member_a, {}).get("submitted", False)
+    if not submitted and not session_submitted:
         logger.info("MEMBER_A 17시까지 미응답 → MEMBER_B로 대표자 전환")
         daily_representative = CONFIG["MEMBER_B"]
         app.client.chat_postMessage(
             channel=CONFIG["MEMBER_B"],
             text="⚠️ MEMBER_A가 오늘 Standup을 제출하지 않아 오늘 데일리 보고 담당자가 되셨습니다!"
         )
+    else:
+        logger.info("MEMBER_A 오늘 Standup 제출 확인됨 → 대표자 유지")
 
 
 # ========================
@@ -354,6 +395,9 @@ def finalize_standup(user_id, client):
 
     # 채널 공유
     post_standup_to_channel(user_id)
+
+    # Supabase에 제출 이력 저장
+    save_standup_submission(user_id, q1)
 
     # 추가 로직 처리
     tomorrow = get_tomorrow()
@@ -855,6 +899,30 @@ def handle_standup_now(ack, body, client):
     ack()
     user_id = body["user_id"]
     send_standup(user_id, include_q1=True)
+
+
+@app.command("/set-representative")
+def handle_set_representative(ack, body, client):
+    """대표자 수동 설정 커맨드"""
+    ack()
+    global daily_representative
+    user_id = body["user_id"]
+    text = body.get("text", "").strip()
+    rep_a = CONFIG["MEMBER_A"]
+    rep_b = CONFIG["MEMBER_B"]
+    if user_id not in [rep_a, rep_b]:
+        client.chat_postMessage(channel=user_id, text="⚠️ 대표자만 사용할 수 있는 커맨드입니다.")
+        return
+    if text == "A" or text == "a":
+        daily_representative = rep_a
+        name = get_member_name(rep_a)
+        client.chat_postMessage(channel=user_id, text=f"✅ 오늘 데일리 보고 담당자가 *{name}*(MEMBER_A)로 설정되었습니다.")
+    elif text == "B" or text == "b":
+        daily_representative = rep_b
+        name = get_member_name(rep_b)
+        client.chat_postMessage(channel=user_id, text=f"✅ 오늘 데일리 보고 담당자가 *{name}*(MEMBER_B)로 설정되었습니다.")
+    else:
+        client.chat_postMessage(channel=user_id, text="사용법: `/set-representative A` 또는 `/set-representative B`")
 
 
 @app.command("/add-ban-report")
