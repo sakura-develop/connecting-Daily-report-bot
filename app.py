@@ -694,6 +694,24 @@ def handle_standup_now(ack, body, client):
     send_standup(user_id, include_q1=True)
 
 
+@app.command("/add-ban-report")
+def handle_add_ban_report(ack, body, client):
+    """추가 영구정지 유저 채널 공유"""
+    ack()
+    user_id = body["user_id"]
+    members = get_all_members()
+    if user_id not in members:
+        client.chat_postMessage(channel=user_id, text="⚠️ 담당자만 사용할 수 있는 커맨드입니다.")
+        return
+    try:
+        client.views_open(
+            trigger_id=body["trigger_id"],
+            view=build_add_ban_modal(user_id, count=1)
+        )
+    except Exception as e:
+        logger.error(f"/add-ban-report 모달 열기 실패: {e}")
+
+
 @app.command("/send-survey")
 def handle_send_survey(ack, respond):
     ack()
