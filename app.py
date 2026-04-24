@@ -947,6 +947,8 @@ def start_scheduler():
     return scheduler
 
 
+# gunicorn 및 직접 실행 모두에서 스케줄러 시작
+start_scheduler()
+
 if __name__ == "__main__":
-    start_scheduler()
     flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 3000)))
