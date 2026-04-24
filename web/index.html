@@ -236,6 +236,18 @@ textarea { resize: vertical; min-height: 80px; line-height: 1.6; }
   z-index: 200; align-items: center; justify-content: center;
 }
 .modal-overlay.show { display: flex; }
+
+/* 비밀번호 설정 화면 */
+.set-pw-wrap {
+  min-height: 100vh;
+  display: none; align-items: center; justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(ellipse at 25% 25%, rgba(255,71,87,0.10) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 80%, rgba(255,107,129,0.06) 0%, transparent 50%),
+    var(--bg);
+}
+.set-pw-wrap.active { display: flex; }
 .modal-card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 16px; padding: 36px;
@@ -273,6 +285,29 @@ textarea { resize: vertical; min-height: 80px; line-height: 1.6; }
     </div>
     <div class="error-msg" id="loginError"></div>
     <button class="btn btn-primary btn-full" id="loginBtn" onclick="doLogin()" style="margin-top:20px">로그인</button>
+  </div>
+</div>
+
+<!-- 비밀번호 설정 (초대 링크 클릭 시) -->
+<div class="set-pw-wrap" id="setPwWrap">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-icon">🚫</div>
+      <div class="login-logo-text">BanManager</div>
+    </div>
+    <div class="login-title">비밀번호 설정</div>
+    <div class="login-sub">처음 로그인하시나요? 사용할 비밀번호를 설정해주세요.</div>
+    <div class="field">
+      <label>새 비밀번호</label>
+      <input type="password" id="setPwNew" placeholder="비밀번호 입력 (6자 이상)" />
+    </div>
+    <div class="field">
+      <label>비밀번호 확인</label>
+      <input type="password" id="setPwConfirm" placeholder="비밀번호 재입력"
+        onkeydown="if(event.key==='Enter') doSetPw()" />
+    </div>
+    <div class="error-msg" id="setPwError"></div>
+    <button class="btn btn-primary btn-full" id="setPwBtn" onclick="doSetPw()" style="margin-top:20px">설정 완료</button>
   </div>
 </div>
 
@@ -431,12 +466,67 @@ let selectedCountry = null;
 let selectedReason = null;
 
 async function init() {
+  // URL 해시에서 초대/복구 토큰 감지
+  const hash = window.location.hash;
+  if (hash && (hash.includes('type=invite') || hash.includes('type=recovery'))) {
+    const { data: { session }, error } = await sb.auth.getSession();
+    if (session) {
+      currentUser = session.user;
+      showSetPw();
+      return;
+    }
+  }
+
   const { data: { session } } = await sb.auth.getSession();
   if (session) { currentUser = session.user; showApp(); }
+
   sb.auth.onAuthStateChange((event, session) => {
+    if (event === 'PASSWORD_RECOVERY' || event === 'USER_UPDATED') {
+      if (session) { currentUser = session.user; showSetPw(); }
+      return;
+    }
     if (session) { currentUser = session.user; showApp(); }
     else { currentUser = null; showLogin(); }
   });
+}
+
+function showSetPw() {
+  document.getElementById('loginWrap').style.display = 'none';
+  document.getElementById('app').classList.remove('active');
+  document.getElementById('setPwWrap').classList.add('active');
+  document.getElementById('setPwError').style.display = 'none';
+  document.getElementById('setPwNew').value = '';
+  document.getElementById('setPwConfirm').value = '';
+  setTimeout(() => document.getElementById('setPwNew').focus(), 100);
+}
+
+async function doSetPw() {
+  const newPw = document.getElementById('setPwNew').value;
+  const confirm = document.getElementById('setPwConfirm').value;
+  const err = document.getElementById('setPwError');
+  const btn = document.getElementById('setPwBtn');
+
+  if (newPw.length < 6) {
+    err.textContent = '비밀번호는 6자 이상이어야 합니다.';
+    err.style.display = 'block'; return;
+  }
+  if (newPw !== confirm) {
+    err.textContent = '비밀번호가 일치하지 않습니다.';
+    err.style.display = 'block'; return;
+  }
+
+  btn.textContent = '설정 중...'; btn.disabled = true;
+  const { error } = await sb.auth.updateUser({ password: newPw });
+  btn.textContent = '설정 완료'; btn.disabled = false;
+
+  if (error) {
+    err.textContent = '설정에 실패했습니다. 다시 시도해주세요.';
+    err.style.display = 'block'; return;
+  }
+
+  document.getElementById('setPwWrap').classList.remove('active');
+  showApp();
+  showToast('✅ 비밀번호가 설정되었습니다!', 'success');
 }
 
 async function doLogin() {
