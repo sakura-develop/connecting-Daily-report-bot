@@ -699,7 +699,7 @@ def handle_add_ban_report(ack, body, client):
     """추가 영구정지 유저 채널 공유"""
     ack()
     user_id = body["user_id"]
-    members = get_all_members()
+    members = [m for m in [CONFIG["MEMBER_A"], CONFIG["MEMBER_B"], CONFIG["MEMBER_C"]] if m]
     if user_id not in members:
         client.chat_postMessage(channel=user_id, text="⚠️ 담당자만 사용할 수 있는 커맨드입니다.")
         return
