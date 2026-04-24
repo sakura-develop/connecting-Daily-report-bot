@@ -674,6 +674,169 @@ def handle_q1_1_submit(ack, body, client):
 
 
 # ========================
+# 추가 영구정지 보고 (/add-ban-report)
+# ========================
+COUNTRY_OPTIONS = [
+    {"text": {"type": "plain_text", "text": "🇰🇷 한국"}, "value": "kr"},
+    {"text": {"type": "plain_text", "text": "🇯🇵 일본"}, "value": "jp"},
+    {"text": {"type": "plain_text", "text": "🌏 글로벌"}, "value": "global"},
+    {"text": {"type": "plain_text", "text": "🇹🇼 대만/홍콩"}, "value": "tw"},
+]
+
+REASON_OPTIONS = [
+    {"text": {"type": "plain_text", "text": "3대 악성 행위"}, "value": "3대 악성 행위"},
+    {"text": {"type": "plain_text", "text": "연락처 교환 요구"}, "value": "연락처 교환 요구"},
+    {"text": {"type": "plain_text", "text": "스캠"}, "value": "스캠"},
+    {"text": {"type": "plain_text", "text": "피드 규칙 위반"}, "value": "피드 규칙 위반"},
+    {"text": {"type": "plain_text", "text": "기타"}, "value": "기타"},
+]
+
+COUNTRY_LABEL = {
+    "kr": "🇰🇷 한국",
+    "jp": "🇯🇵 일본",
+    "global": "🌏 글로벌",
+    "tw": "🇹🇼 대만/홍콩"
+}
+
+
+def build_add_ban_modal(user_id, count=1):
+    blocks = [
+        {"type": "section", "text": {"type": "mrkdwn", "text": "🚨 *추가 영구정지 유저 정보를 입력해주세요.*"}}
+    ]
+    for i in range(count):
+        blocks += [
+            {"type": "divider"},
+            {
+                "type": "input",
+                "block_id": f"country_{i}_block",
+                "element": {
+                    "type": "static_select",
+                    "action_id": f"country_{i}_select",
+                    "placeholder": {"type": "plain_text", "text": "국가 선택"},
+                    "options": COUNTRY_OPTIONS
+                },
+                "label": {"type": "plain_text", "text": f"#{i+1} 국가 *"}
+            },
+            {
+                "type": "input",
+                "block_id": f"email_{i}_block",
+                "element": {
+                    "type": "plain_text_input",
+                    "action_id": f"email_{i}_input",
+                    "placeholder": {"type": "plain_text", "text": "user@example.com"}
+                },
+                "label": {"type": "plain_text", "text": f"#{i+1} 이메일 *"}
+            },
+            {
+                "type": "input",
+                "block_id": f"reason_{i}_block",
+                "element": {
+                    "type": "static_select",
+                    "action_id": f"reason_{i}_select",
+                    "placeholder": {"type": "plain_text", "text": "정지 사유 선택"},
+                    "options": REASON_OPTIONS
+                },
+                "label": {"type": "plain_text", "text": f"#{i+1} 정지 사유 *"}
+            },
+            {
+                "type": "input",
+                "block_id": f"other_{i}_block",
+                "optional": True,
+                "element": {
+                    "type": "plain_text_input",
+                    "action_id": f"other_{i}_input",
+                    "placeholder": {"type": "plain_text", "text": "기타 사유 직접 입력 (기타 선택 시)"}
+                },
+                "label": {"type": "plain_text", "text": f"#{i+1} 기타 사유"}
+            },
+        ]
+    blocks += [
+        {"type": "divider"},
+        {
+            "type": "actions",
+            "block_id": "add_more_block",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "➕ 한 명 더 추가"},
+                    "action_id": "add_ban_more",
+                    "value": str(count)
+                }
+            ]
+        }
+    ]
+    return {
+        "type": "modal",
+        "callback_id": "add_ban_report_modal",
+        "title": {"type": "plain_text", "text": "영구정지 추가 공유"},
+        "submit": {"type": "plain_text", "text": "채널에 공유"},
+        "close": {"type": "plain_text", "text": "취소"},
+        "blocks": blocks
+    }
+
+
+@app.action("add_ban_more")
+def handle_add_ban_more(ack, body, client):
+    ack()
+    current_count = int(body["actions"][0]["value"])
+    new_count = current_count + 1
+    user_id = body["user"]["id"]
+    try:
+        client.views_update(
+            view_id=body["view"]["id"],
+            view=build_add_ban_modal(user_id, count=new_count)
+        )
+    except Exception as e:
+        logger.error(f"add_ban_more 모달 업데이트 실패: {e}")
+
+
+@app.view("add_ban_report_modal")
+def handle_add_ban_report_submit(ack, body, client):
+    ack()
+    user_id = body["user"]["id"]
+    values = body["view"]["state"]["values"]
+    name = get_member_name(user_id)
+    today_str = datetime.now(KST).strftime("%m. %d")
+
+    count = 0
+    while f"country_{count}_block" in values:
+        count += 1
+
+    country_groups = {}
+    for i in range(count):
+        country = values.get(f"country_{i}_block", {}).get(f"country_{i}_select", {}).get("selected_option", {}).get("value", "")
+        email = values.get(f"email_{i}_block", {}).get(f"email_{i}_input", {}).get("value", "")
+        reason = values.get(f"reason_{i}_block", {}).get(f"reason_{i}_select", {}).get("selected_option", {}).get("value", "")
+        other = values.get(f"other_{i}_block", {}).get(f"other_{i}_input", {}).get("value", "")
+        if not country or not email or not reason:
+            continue
+        final_reason = f"기타: {other}" if reason == "기타" and other else reason
+        if country not in country_groups:
+            country_groups[country] = []
+        country_groups[country].append(f"{email} : {final_reason}")
+
+    if not country_groups:
+        return
+
+    lines = [f"🚨 *영구정지 유저 추가 공유 ({today_str})*", f"공유: {name}", ""]
+    for code, label in COUNTRIES:
+        if country_groups.get(code):
+            lines.append(f"\n{COUNTRY_LABEL[code]}")
+            lines += country_groups[code]
+
+    message = "\n".join(lines)
+    try:
+        app.client.chat_postMessage(
+            channel=CONFIG["DAILY_CHANNEL"],
+            text=message,
+            blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": message}}]
+        )
+        logger.info(f"추가 영구정지 보고 게시 완료: {name}")
+    except Exception as e:
+        logger.error(f"추가 영구정지 보고 게시 실패: {e}")
+
+
+# ========================
 # 슬래시 커맨드
 # ========================
 @app.command("/daily-now")
