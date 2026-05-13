@@ -310,13 +310,21 @@ def send_standup_all():
 
 
 def check_member_a_response():
-    """17시 기준 MEMBER_A 미응답 시 MEMBER_B로 전환"""
+    """17시 기준 MEMBER_A 미응답 또는 오후 반차 시 MEMBER_B로 전환"""
     global daily_representative
     member_a = CONFIG["MEMBER_A"]
-    # Supabase에서 오늘 제출 여부 확인
-    submitted, q1 = check_standup_submitted(member_a)
+
+    # Supabase에서 오늘 제출 여부 + q1 값 확인
+    submitted, q1_db = check_standup_submitted(member_a)
     # 메모리 세션도 함께 확인
-    session_submitted = standup_sessions.get(member_a, {}).get("submitted", False)
+    session = standup_sessions.get(member_a, {})
+    session_submitted = session.get("submitted", False)
+    q1_memory = session.get("q1", "")
+
+    # 최종 q1 값 (DB 우선, 없으면 메모리)
+    q1 = q1_db or q1_memory
+
+    # 미응답 체크
     if not submitted and not session_submitted:
         logger.info("MEMBER_A 17시까지 미응답 → MEMBER_B로 대표자 전환")
         daily_representative = CONFIG["MEMBER_B"]
@@ -324,8 +332,19 @@ def check_member_a_response():
             channel=CONFIG["MEMBER_B"],
             text="⚠️ MEMBER_A가 오늘 Standup을 제출하지 않아 오늘 데일리 보고 담당자가 되셨습니다!"
         )
-    else:
-        logger.info("MEMBER_A 오늘 Standup 제출 확인됨 → 대표자 유지")
+        return
+
+    # 오후 반차 체크 (Supabase q1 값 기반)
+    if q1 == "🌝 오후 반차":
+        logger.info("MEMBER_A 오후 반차 확인 (DB) → MEMBER_B로 대표자 전환")
+        daily_representative = CONFIG["MEMBER_B"]
+        app.client.chat_postMessage(
+            channel=CONFIG["MEMBER_B"],
+            text="📢 MEMBER_A가 오늘 오후 반차로 오늘 데일리 보고 담당자가 되셨습니다!"
+        )
+        return
+
+    logger.info(f"MEMBER_A 오늘 Standup 제출 확인됨 (q1: {q1}) → 대표자 유지")
 
 
 # ========================
