@@ -302,8 +302,9 @@ def check_standup_submitted(user_id):
 
 def send_standup_all():
     """평일 오전 10시 전체 발송"""
-    global daily_representative
+    global daily_representative, standup_sessions
     daily_representative = CONFIG["MEMBER_A"]  # 기본값 초기화
+    standup_sessions = {}  # 세션 초기화 (전날 데이터 제거)
     for user_id in [CONFIG["MEMBER_A"], CONFIG["MEMBER_B"]]:
         if user_id:
             send_standup(user_id, include_q1=True)
@@ -496,6 +497,10 @@ def handle_standup_q2(ack, body, client):
     standup_sessions[user_id]["q2"] = value
     standup_sessions[user_id]["channel"] = body["channel"]["id"]
     standup_sessions[user_id]["ts"] = body["message"]["ts"]
+
+    # 휴가가 아닌 경우 vacation_days 초기화
+    if value != "🏝️ 휴가":
+        standup_sessions[user_id]["q2_vacation_days"] = ""
 
     # 휴가 선택 시 기간 모달 열기
     if value == "🏝️ 휴가":
