@@ -673,9 +673,10 @@ def post_final_daily(user_id):
 def handle_q1_yes(ack, body, client):
     ack()
     user_id = body["user"]["id"]
-    if user_id not in daily_sessions:
-        daily_sessions[user_id] = {}
+    # 이전 세션 완전 초기화
+    daily_sessions[user_id] = {}
     daily_sessions[user_id]["q1"] = "있음"
+    daily_sessions[user_id]["q1_1"] = ""
     daily_sessions[user_id]["channel"] = body["channel"]["id"]
     daily_sessions[user_id]["q1_ts"] = body["message"]["ts"]
     try:
@@ -690,9 +691,10 @@ def handle_q1_no(ack, body, client):
     user_id = body["user"]["id"]
     channel_id = body["channel"]["id"]
     message_ts = body["message"]["ts"]
-    if user_id not in daily_sessions:
-        daily_sessions[user_id] = {}
+    # 이전 세션 완전 초기화
+    daily_sessions[user_id] = {}
     daily_sessions[user_id]["q1"] = "없음"
+    daily_sessions[user_id]["q1_1"] = ""
     daily_sessions[user_id]["channel"] = channel_id
     try:
         client.chat_update(
